@@ -55,8 +55,9 @@ import {
 } from '../declaracoes';
 import { InicioAlgoritmo } from '../declaracoes/inicio-algoritmo';
 import { VisitanteComumInterface } from '../interfaces';
+import { inferirTipoVariavel } from '../interpretador';
 import { ContinuarQuebra, RetornoQuebra, SustarQuebra } from '../quebras';
-
+import tiposDeSimbolos from "../tipos-de-simbolos/portugol-studio"
 export class FormatadorPortugolStudio implements VisitanteComumInterface {
     indentacaoAtual: number;
     quebraLinha: string;
@@ -100,11 +101,19 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
         throw new Error('Método não implementado');
     }
     visitarExpressaoDeAtribuicao(expressao: Atribuir) {
-        throw new Error('Método não implementado');
+        if (this.deveIndentar) {
+            this.codigoFormatado += `${" ".repeat(this.indentacaoAtual)}`
+        }
+        this.codigoFormatado += `${expressao.simbolo.lexema} = `;
+        this.formatarDeclaracaoOuConstruto(expressao.valor)
+
+        if (this.devePularLinha) {
+            this.codigoFormatado += this.quebraLinha;
+        }
     }
 
     visitarDeclaracaoDeExpressao(declaracao: Expressao) {
-        // throw new Error("Método não implementado");
+        this.formatarDeclaracaoOuConstruto(declaracao.expressao)
     }
 
     visitarDeclaracaoAleatorio(declaracao: Aleatorio): Promise<any> {
@@ -112,11 +121,9 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     }
 
     visitarDeclaracaoDefinicaoFuncao(declaracao: FuncaoDeclaracao) {
-        this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}funcao ${declaracao.simbolo.lexema}()${
-            this.quebraLinha
-        }`;
+        this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}funcao ${declaracao.simbolo.lexema}(`;
 
-        this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}{${this.quebraLinha}`;
+
         this.visitarExpressaoFuncaoConstruto(declaracao.funcao);
         this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}}${this.quebraLinha}`;
     }
@@ -140,23 +147,91 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarDeclaracaoFazer(declaracao: Fazer) {
         throw new Error('Método não implementado');
     }
+
+    private formatarBlocoOuVetorDeclaracoes(declaracoes: Declaracao[]) {
+        this.indentacaoAtual += this.tamanhoIndentacao;
+        for (let declaracaoBloco of declaracoes) {
+            this.formatarDeclaracaoOuConstruto(declaracaoBloco);
+        }
+        this.indentacaoAtual -= this.tamanhoIndentacao;
+    }
+
     visitarDeclaracaoImportar(declaracao: Importar) {
         throw new Error('Método não implementado');
     }
-    visitarDeclaracaoPara(declaracao: Para): Promise<any> {
-        throw new Error('Método não implementado');
+    visitarDeclaracaoPara(declaracao: Para): any {
+        this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}para(`;
+        this.devePularLinha = false;
+        if (declaracao.inicializador) {
+            if (Array.isArray(declaracao.inicializador)) {
+                this.deveIndentar = false;
+                for (let declaracaoInicializador of declaracao.inicializador) {
+                    this.formatarDeclaracaoOuConstruto(declaracaoInicializador);
+                }
+                this.deveIndentar = true;
+            } else {
+                this.deveIndentar = false;
+                this.formatarDeclaracaoOuConstruto(declaracao.inicializador);
+                this.deveIndentar = true;
+            }
+        }
+
+        this.codigoFormatado += "; "
+        this.formatarDeclaracaoOuConstruto(declaracao.condicao);
+
+        this.codigoFormatado += `; `;
+        if (declaracao.incrementar instanceof Unario) {
+            switch (declaracao.incrementar.operador.tipo) {
+                case tiposDeSimbolos.INCREMENTAR:
+                    this.codigoFormatado += `${declaracao.incrementar.operando.simbolo.lexema}++)`
+                    break;
+                case tiposDeSimbolos.DECREMENTAR:
+                    this.codigoFormatado += `${declaracao.incrementar.operando.simbolo.lexema}--)`
+                    break;
+            }
+        }
+
+        this.codigoFormatado += this.quebraLinha;
+        this.formatarBlocoOuVetorDeclaracoes(declaracao.corpo.declaracoes);
+
+        this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}}${this.quebraLinha}`;
     }
     visitarDeclaracaoParaCada(declaracao: ParaCada): Promise<any> {
         throw new Error('Método não implementado');
     }
     visitarDeclaracaoSe(declaracao: Se) {
-        throw new Error('Método não implementado');
+        console.log(declaracao);
+
+        this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}se(`;
+        this.formatarDeclaracaoOuConstruto(declaracao.condicao);
+        this.codigoFormatado += `) {${this.quebraLinha}`;
+
+        this.indentacaoAtual += this.tamanhoIndentacao;
+        for (let declaracaoBloco of (declaracao.caminhoEntao as Bloco).declaracoes) {
+            this.formatarDeclaracaoOuConstruto(declaracaoBloco);
+        }
+
+        this.indentacaoAtual -= this.tamanhoIndentacao;
+
+        if (declaracao.caminhosSeSenao && declaracao.caminhosSeSenao.length > 0) {
+            this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}} senao `;
+            this.formatarBlocoOuVetorDeclaracoes(declaracao.caminhosSeSenao)
+        } if (declaracao.caminhoSenao) {
+            this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}} senao {`;
+            this.formatarDeclaracaoOuConstruto(declaracao.caminhoSenao);
+        } else {
+            this.codigoFormatado += `${' '.repeat(this.indentacaoAtual)}}${this.quebraLinha}`;
+        }
     }
     visitarDeclaracaoTente(declaracao: Tente) {
         throw new Error('Método não implementado');
     }
-    visitarDeclaracaoVar(declaracao: Var): Promise<any> {
-        throw new Error('Método não implementado');
+    visitarDeclaracaoVar(declaracao: Var): any {
+
+        this.codigoFormatado += `${" ".repeat(this.indentacaoAtual)}${declaracao.tipo} ${declaracao.simbolo.lexema} = `
+        this.formatarDeclaracaoOuConstruto(declaracao.inicializador)
+        this.codigoFormatado += this.quebraLinha
+
     }
     visitarDeclaracaoVarMultiplo(declaracao: VarMultiplo): Promise<any> {
         throw new Error('Método não implementado');
@@ -170,8 +245,10 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarExpressaoAcessoMetodo(expressao: any) {
         throw new Error('Método não implementado');
     }
-    visitarExpressaoAgrupamento(expressao: any): Promise<any> {
-        throw new Error('Método não implementado');
+    visitarExpressaoAgrupamento(expressao: any): any {
+        this.codigoFormatado += '(';
+        this.formatarDeclaracaoOuConstruto(expressao.expressao);
+        this.codigoFormatado += ')';
     }
     visitarExpressaoAtribuicaoPorIndice(expressao: any): Promise<any> {
         throw new Error('Método não implementado');
@@ -179,17 +256,79 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarExpressaoAtribuicaoPorIndicesMatriz(expressao: any): Promise<any> {
         throw new Error('Método não implementado');
     }
-    visitarExpressaoBinaria(expressao: any) {
-        throw new Error('Método não implementado');
+    visitarExpressaoBinaria(expressao: Binario) {
+        this.formatarDeclaracaoOuConstruto(expressao.esquerda);
+        switch (expressao.operador.tipo) {
+            case tiposDeSimbolos.ADICAO:
+                this.codigoFormatado += ' + ';
+                break;
+            case tiposDeSimbolos.DIVISAO:
+                this.codigoFormatado += ' / ';
+                break;
+            case tiposDeSimbolos.DIVISAO_INTEIRA:
+                this.codigoFormatado += '  ';
+                break;
+            case tiposDeSimbolos.IGUAL:
+                this.codigoFormatado += ' = ';
+                break;
+            case tiposDeSimbolos.MAIOR:
+                this.codigoFormatado += ' > ';
+                break;
+            case tiposDeSimbolos.MAIOR_IGUAL:
+                this.codigoFormatado += ' >= ';
+                break;
+            case tiposDeSimbolos.MENOR:
+                this.codigoFormatado += ' < ';
+                break;
+            case tiposDeSimbolos.MENOR_IGUAL:
+                this.codigoFormatado += ' <= ';
+                break;
+            case tiposDeSimbolos.SUBTRACAO:
+                this.codigoFormatado += ` - `;
+                break;
+            case tiposDeSimbolos.MULTIPLICACAO:
+                this.codigoFormatado += ` * `;
+                break;
+            case tiposDeSimbolos.MODULO:
+                this.codigoFormatado += ` % `;
+                break;
+            default:
+                console.log(expressao.operador.tipo);
+                break;
+        }
+        this.formatarDeclaracaoOuConstruto(expressao.direita);
     }
-    visitarExpressaoBloco(declaracao: Bloco): Promise<any> {
-        throw new Error('Método não implementado');
+    visitarExpressaoBloco(declaracao: Bloco): any {
+        this.codigoFormatado += this.quebraLinha
+        this.formatarBlocoOuVetorDeclaracoes(declaracao.declaracoes);
     }
     visitarExpressaoContinua(declaracao?: Continua): ContinuarQuebra {
         throw new Error('Método não implementado');
     }
     visitarExpressaoDeChamada(expressao: any) {
-        throw new Error('Método não implementado');
+        console.log(expressao);
+
+        /* if (this.deveIndentar) {
+            this.codigoFormatado += `${" ".repeat(this.indentacaoAtual)}`
+        } else {
+            this.codigoFormatado += ", "
+        }
+        this.formatarDeclaracaoOuConstruto(expressao.entidadeChamada);
+        this.codigoFormatado += '(';
+        for (let argumento of expressao.argumentos) {
+            this.formatarDeclaracaoOuConstruto(argumento);
+            this.codigoFormatado += ', ';
+        }
+
+        if (expressao.argumentos.length > 0) {
+            this.codigoFormatado = this.codigoFormatado.slice(0, -2);
+        }
+        if (this.deveIndentar) {
+            this.codigoFormatado += `)${this.quebraLinha}`;
+        } else {
+            this.codigoFormatado += `)`;
+        }
+        this.deveIndentar = true; */
     }
     visitarExpressaoDefinirValor(expressao: any) {
         throw new Error('Método não implementado');
@@ -197,8 +336,8 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarExpressaoDeleguaFuncao(expressao: any) {
         throw new Error('Método não implementado');
     }
-    visitarExpressaoDeVariavel(expressao: any) {
-        throw new Error('Método não implementado');
+    visitarExpressaoDeVariavel(expressao: Variavel) {
+        this.codigoFormatado += expressao.simbolo.lexema
     }
     visitarExpressaoDicionario(expressao: any) {
         throw new Error('Método não implementado');
@@ -206,8 +345,16 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarExpressaoExpressaoRegular(expressao: ExpressaoRegular): Promise<RegExp> {
         throw new Error('Método não implementado');
     }
+
     visitarDeclaracaoEscrevaMesmaLinha(declaracao: EscrevaMesmaLinha) {
-        throw new Error('Método não implementado');
+        this.codigoFormatado += `${" ".repeat(this.indentacaoAtual)}escreva(`
+        for (let argumento of declaracao.argumentos) {
+            if (argumento instanceof Chamada) {
+                this.deveIndentar = false;
+            }
+            this.formatarDeclaracaoOuConstruto(argumento)
+        }
+        this.codigoFormatado += `)${this.quebraLinha}`
     }
     visitarExpressaoFalhar(expressao: any): Promise<any> {
         throw new Error('Método não implementado');
@@ -220,9 +367,23 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     }
     visitarExpressaoFuncaoConstruto(expressao: FuncaoConstruto) {
         this.indentacaoAtual += this.tamanhoIndentacao;
+        if (expressao.parametros.length === 0) {
+            this.codigoFormatado += this.quebraLinha;
+        } else {
+            for (let parametro of expressao.parametros) {
+                this.codigoFormatado += `${parametro.nome.lexema}, `
+            }
+        }
+        this.codigoFormatado = this.codigoFormatado.slice(0, -2);
+        this.codigoFormatado += `) {${this.quebraLinha}`
 
-        for (let declaracaoCorpo of expressao.corpo) {
-            this.formatarDeclaracaoOuConstruto(declaracaoCorpo);
+
+        if (expressao.corpo.length === 0) {
+            this.codigoFormatado += this.quebraLinha;
+        } else {
+            for (let declaracaoCorpo of expressao.corpo) {
+                this.formatarDeclaracaoOuConstruto(declaracaoCorpo);
+            }
         }
 
         this.indentacaoAtual -= this.tamanhoIndentacao;
@@ -230,27 +391,51 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarExpressaoIsto(expressao: any) {
         throw new Error('Método não implementado');
     }
-    visitarExpressaoLeia(expressao: Leia): Promise<any> {
-        throw new Error('Método não implementado');
+    visitarExpressaoLeia(expressao: Leia): any {
+        this.codigoFormatado += `${" ".repeat(this.indentacaoAtual)}leia(`
+        for (let argumento of expressao.argumentos) {
+            this.formatarDeclaracaoOuConstruto(argumento)
+            this.codigoFormatado += `, `;
+        }
+
+        if (expressao.argumentos.length > 0) {
+            this.codigoFormatado = this.codigoFormatado.slice(0, -2);
+        }
+
+        this.codigoFormatado += `)${this.quebraLinha}`
     }
     visitarExpressaoLeiaMultiplo(expressao: LeiaMultiplo): Promise<any> {
         throw new Error('Método não implementado');
     }
 
     visitarExpressaoLiteral(expressao: Literal): any {
-        if (typeof expressao.valor === 'string') {
-            this.codigoFormatado += `"${expressao.valor}"`;
-            return;
+        switch (typeof expressao.valor) {
+            case "string":
+                this.codigoFormatado += `"${expressao.valor}"`
+                break
+            case "boolean":
+                if (expressao.valor) {
+                    this.codigoFormatado += `verdadeiro`
+                } else
+                    this.codigoFormatado += `falso`
+                break
+            default:
+                this.codigoFormatado += `${expressao.valor}`;
         }
 
-        this.codigoFormatado += `${expressao.valor}`;
     }
 
     visitarExpressaoLogica(expressao: any) {
         throw new Error('Método não implementado');
     }
-    visitarExpressaoRetornar(declaracao: Retorna): Promise<RetornoQuebra> {
-        throw new Error('Método não implementado');
+    visitarExpressaoRetornar(declaracao: Retorna): any {
+        this.codigoFormatado += `${this.quebraLinha}${' '.repeat(this.indentacaoAtual)}retorne`;
+        if (declaracao.valor) {
+            this.codigoFormatado += ` `;
+            this.formatarDeclaracaoOuConstruto(declaracao.valor);
+        }
+
+        this.codigoFormatado += `${this.quebraLinha}`;
     }
     visitarExpressaoSuper(expressao: Super) {
         throw new Error('Método não implementado');
@@ -261,8 +446,36 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
     visitarExpressaoTipoDe(expressao: TipoDe): Promise<any> {
         throw new Error('Método não implementado');
     }
-    visitarExpressaoUnaria(expressao: any) {
-        throw new Error('Método não implementado');
+    visitarExpressaoUnaria(expressao: Unario) {
+        let operador: string;
+        switch (expressao.operador.tipo) {
+            case tiposDeSimbolos.SUBTRACAO:
+            case tiposDeSimbolos.DECREMENTAR:
+                operador = `-`;
+                break;
+            case tiposDeSimbolos.ADICAO:
+            case tiposDeSimbolos.INCREMENTAR:
+                operador = `+`;
+                break;
+            case tiposDeSimbolos.NEGACAO:
+                operador = `nao `;
+                break;
+        }
+
+        switch (expressao.incidenciaOperador) {
+            case 'ANTES':
+                this.codigoFormatado += operador;
+                this.formatarDeclaracaoOuConstruto(expressao.operando);
+                break;
+            case 'DEPOIS':
+                this.formatarDeclaracaoOuConstruto(expressao.operando);
+                this.codigoFormatado += operador;
+                break;
+        }
+
+        if (this.devePularLinha) {
+            this.codigoFormatado += this.quebraLinha;
+        }
     }
     visitarExpressaoVetor(expressao: any) {
         throw new Error('Método não implementado');
@@ -387,6 +600,9 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
             case 'Vetor':
                 this.visitarExpressaoVetor(declaracaoOuConstruto as Vetor);
                 break;
+            case 'EscrevaMesmaLinha':
+                this.visitarDeclaracaoEscrevaMesmaLinha(declaracaoOuConstruto as EscrevaMesmaLinha);
+                break;
             default:
                 console.log(declaracaoOuConstruto.constructor.name);
                 break;
@@ -395,7 +611,7 @@ export class FormatadorPortugolStudio implements VisitanteComumInterface {
 
     formatar(declaracoes: Declaracao[]): string {
         this.indentacaoAtual = 0;
-        this.codigoFormatado = `programa${this.quebraLinha}{${this.quebraLinha}`;
+        this.codigoFormatado = `programa {${this.quebraLinha}`;
         this.devePularLinha = true;
         this.deveIndentar = true;
         this.indentacaoAtual += this.tamanhoIndentacao;
